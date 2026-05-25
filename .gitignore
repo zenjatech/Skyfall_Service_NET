@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.DotSettings.user
+
+## Azure Functions local settings (contains secrets)
+local.settings.json
+
+## Rider / JetBrains
+.idea/
+*.sln.DotSettings
+
+## VS Code
+.vscode/
+
+## OS
+.DS_Store
+Thumbs.db
