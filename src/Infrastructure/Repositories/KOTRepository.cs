@@ -21,7 +21,9 @@ public sealed class KOTRepository : IKOTRepository
     }
 
     public async Task<KOT?> GetByIdAsync(Guid id, Guid tenantId, CancellationToken ct) =>
-        await _db.KOTs.Include(k => k.Order).FirstOrDefaultAsync(k => k.Id == id && k.TenantId == tenantId, ct);
+        await _db.KOTs
+            .Include(k => k.Order).ThenInclude(o => o!.Table)
+            .FirstOrDefaultAsync(k => k.Id == id && k.TenantId == tenantId, ct);
 
     public async Task UpdateAsync(KOT kot, CancellationToken ct)
     {

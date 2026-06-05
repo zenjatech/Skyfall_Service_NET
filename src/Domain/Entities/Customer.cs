@@ -10,6 +10,7 @@ public sealed class Customer
     public DateOnly? Birthday { get; set; }
     public DateOnly? Anniversary { get; set; }
     public DateOnly? SpecialEventDate { get; set; }
+    public string? SpecialEventName { get; set; }
     public int VisitCount { get; set; } = 0;
     public decimal TotalSpent { get; set; } = 0;
     public DateTime? LastVisit { get; set; }

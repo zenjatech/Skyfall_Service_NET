@@ -18,6 +18,7 @@ public sealed class OrderResponse
     public decimal TotalAmount { get; set; }
     public string? SpecialInstructions { get; set; }
     public List<OrderItemResponse> Items { get; set; } = [];
+    public bool IsPaid { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

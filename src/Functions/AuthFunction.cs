@@ -14,13 +14,15 @@ namespace Skyfall.Functions;
 public sealed class AuthFunction
 {
     private readonly IStaffRepository _staff;
+    private readonly ITenantRepository _tenants;
     private readonly JwtHelper _jwt;
     private readonly IOptions<JwtOptions> _jwtOptions;
     private readonly ILogger<AuthFunction> _logger;
 
-    public AuthFunction(IStaffRepository staff, JwtHelper jwt, IOptions<JwtOptions> jwtOptions, ILogger<AuthFunction> logger)
+    public AuthFunction(IStaffRepository staff, ITenantRepository tenants, JwtHelper jwt, IOptions<JwtOptions> jwtOptions, ILogger<AuthFunction> logger)
     {
         _staff = staff;
+        _tenants = tenants;
         _jwt = jwt;
         _jwtOptions = jwtOptions;
         _logger = logger;
@@ -44,12 +46,24 @@ public sealed class AuthFunction
             if (body is null || string.IsNullOrWhiteSpace(body.Email) || string.IsNullOrWhiteSpace(body.Password))
                 return await ResponseFactory.BadRequestAsync(req, "Email and password are required.");
 
-            // Tenant is resolved from config in single-tenant mode; multi-tenant uses tenant_id header
             var tenantIdHeader = req.Headers.FirstOrDefault(h =>
                 string.Equals(h.Key, "X-Tenant-Id", StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
 
-            if (!Guid.TryParse(tenantIdHeader, out var tenantId))
+            if (string.IsNullOrWhiteSpace(tenantIdHeader))
                 return await ResponseFactory.BadRequestAsync(req, "X-Tenant-Id header is required.");
+
+            Guid tenantId;
+            if (Guid.TryParse(tenantIdHeader, out var parsedGuid))
+            {
+                tenantId = parsedGuid;
+            }
+            else
+            {
+                var tenant = await _tenants.GetBySlugAsync(tenantIdHeader.Trim().ToLowerInvariant(), ct);
+                if (tenant is null)
+                    return await ResponseFactory.NotFoundAsync(req, $"Tenant '{tenantIdHeader}' not found.");
+                tenantId = tenant.Id;
+            }
 
             var staff = await _staff.GetByEmailAsync(body.Email.Trim().ToLowerInvariant(), tenantId, ct);
             if (staff is null || !staff.IsActive || !BCrypt.Net.BCrypt.Verify(body.Password, staff.PasswordHash))

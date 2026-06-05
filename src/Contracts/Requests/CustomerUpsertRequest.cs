@@ -8,4 +8,5 @@ public sealed class CustomerUpsertRequest
     public DateOnly? Birthday { get; set; }
     public DateOnly? Anniversary { get; set; }
     public DateOnly? SpecialEventDate { get; set; }
+    public string? SpecialEventName { get; set; }
 }

@@ -7,6 +7,7 @@ public sealed class Payment
     public Guid OrderId { get; set; }
     public string Mode { get; set; } = "cash";
     public decimal Amount { get; set; }
+    public decimal Tip { get; set; } = 0;
     public string Status { get; set; } = PaymentStatus.Pending;
     public string? RazorpayOrderId { get; set; }
     public string? RazorpayPaymentId { get; set; }

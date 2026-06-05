@@ -77,6 +77,23 @@ public sealed class AnalyticsFunction
             .Take(10)
             .ToListAsync(ct);
 
+        var todayPayments = await _db.Payments.AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.CreatedAt >= todayStart && p.CreatedAt <= todayEnd
+                && p.Status == PaymentStatus.Success)
+            .ToListAsync(ct);
+
+        var totalPaid = todayPayments.Sum(p => p.Amount);
+        var paymentBreakdown = todayPayments
+            .GroupBy(p => p.Mode)
+            .Select(g => new PaymentBreakdownItem
+            {
+                Mode = g.Key,
+                Amount = g.Sum(p => p.Amount),
+                Percent = totalPaid > 0 ? (int)Math.Round(g.Sum(p => p.Amount) / totalPaid * 100) : 0
+            })
+            .OrderByDescending(p => p.Amount)
+            .ToList();
+
         var result = new DashboardAnalyticsResponse
         {
             TodayRevenue = todayOrders.Sum(o => o.TotalAmount),
@@ -84,7 +101,8 @@ public sealed class AnalyticsFunction
             ActiveTables = activeTables,
             TotalCustomers = totalCustomers,
             WeeklyRevenue = weeklyRevenue,
-            TopItems = topItems
+            TopItems = topItems,
+            PaymentBreakdown = paymentBreakdown
         };
 
         return await ResponseFactory.OkAsync(req, result);

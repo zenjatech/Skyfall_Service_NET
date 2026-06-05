@@ -8,6 +8,14 @@ public sealed class DashboardAnalyticsResponse
     public int TotalCustomers { get; set; }
     public List<DailyRevenueResponse> WeeklyRevenue { get; set; } = [];
     public List<TopMenuItemResponse> TopItems { get; set; } = [];
+    public List<PaymentBreakdownItem> PaymentBreakdown { get; set; } = [];
+}
+
+public sealed class PaymentBreakdownItem
+{
+    public string Mode { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public int Percent { get; set; }
 }
 
 public sealed class DailyRevenueResponse

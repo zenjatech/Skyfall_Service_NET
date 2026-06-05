@@ -18,6 +18,7 @@ public sealed class OrderRepository : IOrderRepository
             .Include(o => o.PlacedByStaff)
             .Include(o => o.Items).ThenInclude(i => i.MenuItem)
             .Include(o => o.Items).ThenInclude(i => i.Variant)
+            .Include(o => o.Payments)
             .Where(o => o.TenantId == tenantId);
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(o => o.Status == status);

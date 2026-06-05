@@ -16,6 +16,9 @@ public sealed class TableRepository : ITableRepository
     public async Task<CafeTable?> GetByIdAsync(Guid id, Guid tenantId, CancellationToken ct) =>
         await _db.Tables.FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, ct);
 
+    public async Task<CafeTable?> GetByNumberAsync(int tableNumber, Guid tenantId, CancellationToken ct) =>
+        await _db.Tables.AsNoTracking().FirstOrDefaultAsync(t => t.TableNumber == tableNumber && t.TenantId == tenantId, ct);
+
     public async Task<bool> TableNumberExistsAsync(int tableNumber, Guid tenantId, Guid? excludeId, CancellationToken ct)
     {
         var query = _db.Tables.Where(t => t.TableNumber == tableNumber && t.TenantId == tenantId);

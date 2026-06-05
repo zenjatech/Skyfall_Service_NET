@@ -136,9 +136,10 @@ public sealed class OrdersFunction
             kotItems.Add(new { menuItem.Name, Variant = variantName, Addons = addonNames, itemReq.Quantity, itemReq.SpecialInstructions });
         }
 
+        var effectiveTaxRate = body.TaxRate ?? TaxRate;
         var taxableAmount = Math.Max(subtotal - order.DiscountAmount, 0);
         order.Subtotal = subtotal;
-        order.TaxAmount = Math.Round(taxableAmount * TaxRate, 2);
+        order.TaxAmount = Math.Round(taxableAmount * effectiveTaxRate, 2);
         order.TotalAmount = taxableAmount + order.TaxAmount;
         order.Status = OrderStatus.Confirmed;
 
@@ -183,7 +184,7 @@ public sealed class OrdersFunction
         entity.Status = body.Status;
         entity.UpdatedAt = DateTime.UtcNow;
 
-        if (body.Status is OrderStatus.Served or OrderStatus.Cancelled)
+        if (body.Status is OrderStatus.Cancelled)
         {
             var activeOrders = await _orders.GetByTableAsync(entity.TableId, tenantId, ct);
             var stillActive = activeOrders.Any(o => o.Id != entity.Id &&
@@ -265,7 +266,8 @@ public sealed class OrdersFunction
 
         entity.Subtotal += addedAmount;
         var taxable = Math.Max(entity.Subtotal - entity.DiscountAmount, 0);
-        entity.TaxAmount = Math.Round(taxable * TaxRate, 2);
+        var effectiveAddRate = body.TaxRate ?? TaxRate;
+        entity.TaxAmount = Math.Round(taxable * effectiveAddRate, 2);
         entity.TotalAmount = taxable + entity.TaxAmount;
         entity.UpdatedAt = DateTime.UtcNow;
 
@@ -283,37 +285,42 @@ public sealed class OrdersFunction
         return await ResponseFactory.OkAsync(req, MapToResponse(entity));
     }
 
-    private static OrderResponse MapToResponse(Order o) => new()
+    private static OrderResponse MapToResponse(Order o)
     {
-        Id = o.Id,
-        TableId = o.TableId,
-        TableNumber = o.Table?.TableNumber ?? 0,
-        CustomerId = o.CustomerId,
-        CustomerName = o.Customer?.Name,
-        CustomerPhone = o.Customer?.Phone,
-        PlacedByStaffId = o.PlacedByStaffId,
-        PlacedByStaffName = o.PlacedByStaff?.Name,
-        Status = o.Status,
-        OrderType = o.OrderType,
-        Subtotal = o.Subtotal,
-        TaxAmount = o.TaxAmount,
-        DiscountAmount = o.DiscountAmount,
-        TotalAmount = o.TotalAmount,
-        SpecialInstructions = o.SpecialInstructions,
-        CreatedAt = o.CreatedAt,
-        UpdatedAt = o.UpdatedAt,
-        Items = o.Items.Select(i => new OrderItemResponse
+        var totalPaid = o.Payments.Where(p => p.Status == PaymentStatus.Success).Sum(p => p.Amount);
+        return new()
         {
-            Id = i.Id,
-            MenuItemId = i.MenuItemId,
-            MenuItemName = i.MenuItem?.Name ?? string.Empty,
-            VariantId = i.VariantId,
-            VariantName = i.Variant?.Name,
-            Quantity = i.Quantity,
-            UnitPrice = i.UnitPrice,
-            AddonsJson = i.AddonsJson,
-            SpecialInstructions = i.SpecialInstructions,
-            ItemStatus = i.ItemStatus
-        }).ToList()
-    };
+            Id = o.Id,
+            TableId = o.TableId,
+            TableNumber = o.Table?.TableNumber ?? 0,
+            CustomerId = o.CustomerId,
+            CustomerName = o.Customer?.Name,
+            CustomerPhone = o.Customer?.Phone,
+            PlacedByStaffId = o.PlacedByStaffId,
+            PlacedByStaffName = o.PlacedByStaff?.Name,
+            Status = o.Status,
+            OrderType = o.OrderType,
+            Subtotal = o.Subtotal,
+            TaxAmount = o.TaxAmount,
+            DiscountAmount = o.DiscountAmount,
+            TotalAmount = o.TotalAmount,
+            SpecialInstructions = o.SpecialInstructions,
+            IsPaid = o.TotalAmount > 0 && totalPaid >= o.TotalAmount,
+            CreatedAt = o.CreatedAt,
+            UpdatedAt = o.UpdatedAt,
+            Items = o.Items.Select(i => new OrderItemResponse
+            {
+                Id = i.Id,
+                MenuItemId = i.MenuItemId,
+                MenuItemName = i.MenuItem?.Name ?? string.Empty,
+                VariantId = i.VariantId,
+                VariantName = i.Variant?.Name,
+                Quantity = i.Quantity,
+                UnitPrice = i.UnitPrice,
+                AddonsJson = i.AddonsJson,
+                SpecialInstructions = i.SpecialInstructions,
+                ItemStatus = i.ItemStatus
+            }).ToList()
+        };
+    }
 }

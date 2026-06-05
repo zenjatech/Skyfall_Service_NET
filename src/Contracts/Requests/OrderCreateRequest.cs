@@ -7,6 +7,7 @@ public sealed class OrderCreateRequest
     public string OrderType { get; set; } = "dine_in";
     public string? SpecialInstructions { get; set; }
     public List<OrderItemRequest> Items { get; set; } = [];
+    public decimal? TaxRate { get; set; }
 }
 
 public sealed class OrderItemRequest

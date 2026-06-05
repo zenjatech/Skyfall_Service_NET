@@ -37,11 +37,16 @@ public static class OrderStatus
 
     public static bool CanTransitionTo(string current, string next) => (current, next) switch
     {
+        _ when current == next => true,
         (Pending, Confirmed) => true,
+        (Pending, Preparing) => true,
         (Pending, Cancelled) => true,
         (Confirmed, Preparing) => true,
+        (Confirmed, Ready) => true,
+        (Confirmed, Served) => true,
         (Confirmed, Cancelled) => true,
         (Preparing, Ready) => true,
+        (Preparing, Served) => true,
         (Preparing, Cancelled) => true,
         (Ready, Served) => true,
         (Ready, Cancelled) => true,

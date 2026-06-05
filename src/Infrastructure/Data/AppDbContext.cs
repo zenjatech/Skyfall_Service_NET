@@ -89,6 +89,7 @@ public sealed class AppDbContext : DbContext
             e.Property(c => c.Phone).HasMaxLength(20).IsRequired();
             e.Property(c => c.Name).HasMaxLength(200);
             e.Property(c => c.Email).HasMaxLength(256);
+            e.Property(c => c.SpecialEventName).HasMaxLength(200);
             e.Property(c => c.TotalSpent).HasColumnType("decimal(12,2)");
             e.HasIndex(c => new { c.TenantId, c.Phone }).IsUnique();
         });
@@ -142,6 +143,7 @@ public sealed class AppDbContext : DbContext
             e.HasKey(p => p.Id);
             e.Property(p => p.Mode).HasMaxLength(50).IsRequired();
             e.Property(p => p.Amount).HasColumnType("decimal(12,2)");
+            e.Property(p => p.Tip).HasColumnType("decimal(12,2)");
             e.Property(p => p.Status).HasMaxLength(50).IsRequired();
             e.Property(p => p.RazorpayOrderId).HasMaxLength(100);
             e.Property(p => p.RazorpayPaymentId).HasMaxLength(100);

@@ -2,11 +2,13 @@ using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Skyfall.Common;
 using Skyfall.Contracts.Requests;
 using Skyfall.Contracts.Responses;
 using Skyfall.Domain.Entities;
+using Skyfall.Infrastructure.Data;
 using Skyfall.Infrastructure.Repositories;
 
 namespace Skyfall.Functions;
@@ -14,12 +16,14 @@ namespace Skyfall.Functions;
 public sealed class CustomersFunction
 {
     private readonly ICustomerRepository _customers;
+    private readonly AppDbContext _db;
     private readonly JwtHelper _jwt;
     private readonly ILogger<CustomersFunction> _logger;
 
-    public CustomersFunction(ICustomerRepository customers, JwtHelper jwt, ILogger<CustomersFunction> logger)
+    public CustomersFunction(ICustomerRepository customers, AppDbContext db, JwtHelper jwt, ILogger<CustomersFunction> logger)
     {
         _customers = customers;
+        _db = db;
         _jwt = jwt;
         _logger = logger;
     }
@@ -35,7 +39,20 @@ public sealed class CustomersFunction
         if (error is not null) return await error;
 
         var list = await _customers.GetAllAsync(tenantId, ct);
-        return await ResponseFactory.OkAsync(req, list.Select(MapToResponse).ToList());
+
+        var visitCounts = await _db.Orders.AsNoTracking()
+            .Where(o => o.TenantId == tenantId && o.CustomerId.HasValue && o.Status != OrderStatus.Cancelled)
+            .GroupBy(o => o.CustomerId!.Value)
+            .Select(g => new { CustomerId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.CustomerId, g => g.Count, ct);
+
+        var totalSpentMap = await _db.Orders.AsNoTracking()
+            .Where(o => o.TenantId == tenantId && o.CustomerId.HasValue && o.Status != OrderStatus.Cancelled)
+            .GroupBy(o => o.CustomerId!.Value)
+            .Select(g => new { CustomerId = g.Key, Total = g.Sum(o => o.TotalAmount) })
+            .ToDictionaryAsync(g => g.CustomerId, g => g.Total, ct);
+
+        return await ResponseFactory.OkAsync(req, list.Select(c => MapToResponse(c, visitCounts, totalSpentMap)).ToList());
     }
 
     [Function("GetCustomerById")]
@@ -50,7 +67,14 @@ public sealed class CustomersFunction
 
         var entity = await _customers.GetByIdAsync(id, tenantId, ct);
         if (entity is null) return await ResponseFactory.NotFoundAsync(req, "Customer not found.");
-        return await ResponseFactory.OkAsync(req, MapToResponse(entity));
+
+        var visitCount = await _db.Orders.AsNoTracking()
+            .CountAsync(o => o.TenantId == tenantId && o.CustomerId == id && o.Status != OrderStatus.Cancelled, ct);
+        var totalSpent = await _db.Orders.AsNoTracking()
+            .Where(o => o.TenantId == tenantId && o.CustomerId == id && o.Status != OrderStatus.Cancelled)
+            .SumAsync(o => (decimal?)o.TotalAmount ?? 0, ct);
+
+        return await ResponseFactory.OkAsync(req, MapToResponse(entity, visitCount, totalSpent));
     }
 
     [Function("UpsertCustomer")]
@@ -76,6 +100,7 @@ public sealed class CustomersFunction
             if (body.Birthday.HasValue) existing.Birthday = body.Birthday;
             if (body.Anniversary.HasValue) existing.Anniversary = body.Anniversary;
             if (body.SpecialEventDate.HasValue) existing.SpecialEventDate = body.SpecialEventDate;
+            if (!string.IsNullOrWhiteSpace(body.SpecialEventName)) existing.SpecialEventName = body.SpecialEventName.Trim();
             existing.UpdatedAt = DateTime.UtcNow;
             await _customers.UpdateAsync(existing, ct);
             return await ResponseFactory.OkAsync(req, MapToResponse(existing));
@@ -89,7 +114,8 @@ public sealed class CustomersFunction
             Email = body.Email?.Trim(),
             Birthday = body.Birthday,
             Anniversary = body.Anniversary,
-            SpecialEventDate = body.SpecialEventDate
+            SpecialEventDate = body.SpecialEventDate,
+            SpecialEventName = string.IsNullOrWhiteSpace(body.SpecialEventName) ? null : body.SpecialEventName.Trim()
         };
         await _customers.AddAsync(entity, ct);
         return await ResponseFactory.CreatedAsync(req, MapToResponse(entity));
@@ -110,10 +136,15 @@ public sealed class CustomersFunction
         return await ResponseFactory.NoContentAsync(req);
     }
 
-    private static CustomerResponse MapToResponse(Customer c) => new()
+    private static CustomerResponse MapToResponse(Customer c, Dictionary<Guid, int> visitCounts, Dictionary<Guid, decimal> totalSpentMap) =>
+        MapToResponse(c, visitCounts.GetValueOrDefault(c.Id, 0), totalSpentMap.GetValueOrDefault(c.Id, 0));
+
+    private static CustomerResponse MapToResponse(Customer c, int visitCount = -1, decimal totalSpent = -1) => new()
     {
         Id = c.Id, Phone = c.Phone, Name = c.Name, Email = c.Email, Birthday = c.Birthday,
-        Anniversary = c.Anniversary, SpecialEventDate = c.SpecialEventDate, VisitCount = c.VisitCount,
-        TotalSpent = c.TotalSpent, LastVisit = c.LastVisit, CreatedAt = c.CreatedAt
+        Anniversary = c.Anniversary, SpecialEventDate = c.SpecialEventDate, SpecialEventName = c.SpecialEventName,
+        VisitCount = visitCount >= 0 ? visitCount : c.VisitCount,
+        TotalSpent = totalSpent >= 0 ? totalSpent : c.TotalSpent,
+        LastVisit = c.LastVisit, CreatedAt = c.CreatedAt
     };
 }

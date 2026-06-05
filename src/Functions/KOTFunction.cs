@@ -14,12 +14,14 @@ namespace Skyfall.Functions;
 public sealed class KOTFunction
 {
     private readonly IKOTRepository _kots;
+    private readonly IOrderRepository _orders;
     private readonly JwtHelper _jwt;
     private readonly ILogger<KOTFunction> _logger;
 
-    public KOTFunction(IKOTRepository kots, JwtHelper jwt, ILogger<KOTFunction> logger)
+    public KOTFunction(IKOTRepository kots, IOrderRepository orders, JwtHelper jwt, ILogger<KOTFunction> logger)
     {
         _kots = kots;
+        _orders = orders;
         _jwt = jwt;
         _logger = logger;
     }
@@ -64,6 +66,33 @@ public sealed class KOTFunction
         entity.Status = body.Status;
         entity.UpdatedAt = DateTime.UtcNow;
         await _kots.UpdateAsync(entity, ct);
+
+        var order = await _orders.GetByIdAsync(entity.OrderId, tenantId, ct);
+        if (order is not null)
+        {
+            if (body.Status == KotStatus.Acknowledged &&
+                OrderStatus.CanTransitionTo(order.Status, OrderStatus.Preparing))
+            {
+                order.Status = OrderStatus.Preparing;
+                order.UpdatedAt = DateTime.UtcNow;
+                await _orders.UpdateAsync(order, ct);
+            }
+
+            if (body.Status == KotStatus.Completed)
+            {
+                var allKots = await _kots.GetAllAsync(tenantId, null, ct);
+                var orderKots = allKots.Where(k => k.OrderId == order.Id).ToList();
+                if (orderKots.Count > 0 &&
+                    orderKots.All(k => k.Id == entity.Id || k.Status == KotStatus.Completed) &&
+                    OrderStatus.CanTransitionTo(order.Status, OrderStatus.Ready))
+                {
+                    order.Status = OrderStatus.Ready;
+                    order.UpdatedAt = DateTime.UtcNow;
+                    await _orders.UpdateAsync(order, ct);
+                }
+            }
+        }
+
         return await ResponseFactory.OkAsync(req, MapToResponse(entity));
     }
 

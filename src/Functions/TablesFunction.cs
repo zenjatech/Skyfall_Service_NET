@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Logging;
 using Skyfall.Common;
@@ -66,6 +67,8 @@ public sealed class TablesFunction
 
         var body = await req.ReadFromJsonAsync<TableCreateRequest>(cancellationToken: ct);
         if (body is null) return await ResponseFactory.BadRequestAsync(req, "Invalid request body.");
+        if (body.TableNumber < 1) return await ResponseFactory.BadRequestAsync(req, "Table number must be a positive integer.");
+        if (body.Capacity < 1) return await ResponseFactory.BadRequestAsync(req, "Capacity must be at least 1.");
 
         if (await _tables.TableNumberExistsAsync(body.TableNumber, tenantId, null, ct))
             return await ResponseFactory.ConflictAsync(req, $"Table number {body.TableNumber} already exists.");
@@ -92,8 +95,33 @@ public sealed class TablesFunction
         var body = await req.ReadFromJsonAsync<TableUpdateRequest>(cancellationToken: ct);
         if (body is null) return await ResponseFactory.BadRequestAsync(req, "Invalid request body.");
 
-        if (body.Capacity.HasValue) entity.Capacity = body.Capacity.Value;
-        if (body.Status is not null) entity.Status = body.Status;
+        if (body.TableNumber.HasValue)
+        {
+            if (body.TableNumber.Value < 1)
+                return await ResponseFactory.BadRequestAsync(req, "Table number must be a positive integer.");
+
+            if (await _tables.TableNumberExistsAsync(body.TableNumber.Value, tenantId, id, ct))
+                return await ResponseFactory.ConflictAsync(req, $"Table number {body.TableNumber.Value} already exists.");
+
+            entity.TableNumber = body.TableNumber.Value;
+        }
+
+        if (body.Capacity.HasValue)
+        {
+            if (body.Capacity.Value < 1)
+                return await ResponseFactory.BadRequestAsync(req, "Capacity must be at least 1.");
+
+            entity.Capacity = body.Capacity.Value;
+        }
+
+        if (body.Status is not null)
+        {
+            if (!IsValidStatus(body.Status))
+                return await ResponseFactory.BadRequestAsync(req, $"Unsupported table status '{body.Status}'.");
+
+            entity.Status = body.Status;
+        }
+
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _tables.UpdateAsync(entity, ct);
@@ -110,11 +138,26 @@ public sealed class TablesFunction
         var (_, tenantId, error) = AuthHelper.Authorize(req, _jwt, StaffRoles.Admin);
         if (error is not null) return await error;
 
-        var deleted = await _tables.DeleteAsync(id, tenantId, ct);
+        bool deleted;
+        try
+        {
+            deleted = await _tables.DeleteAsync(id, tenantId, ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Unable to delete table {TableId} because it is referenced by other records.", id);
+            return await ResponseFactory.ConflictAsync(req, "This table has order history or active records and cannot be deleted.");
+        }
+
         if (!deleted) return await ResponseFactory.NotFoundAsync(req, "Table not found.");
         return await ResponseFactory.NoContentAsync(req);
     }
 
+    private static bool IsValidStatus(string status) => status is
+        TableStatus.Free or
+        TableStatus.Occupied or
+        TableStatus.Reserved or
+        TableStatus.BillRequested;
 
     private static TableResponse MapToResponse(CafeTable t) => new()
     {

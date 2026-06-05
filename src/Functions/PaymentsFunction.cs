@@ -15,13 +15,15 @@ public sealed class PaymentsFunction
 {
     private readonly IPaymentRepository _payments;
     private readonly IOrderRepository _orders;
+    private readonly ITableRepository _tables;
     private readonly JwtHelper _jwt;
     private readonly ILogger<PaymentsFunction> _logger;
 
-    public PaymentsFunction(IPaymentRepository payments, IOrderRepository orders, JwtHelper jwt, ILogger<PaymentsFunction> logger)
+    public PaymentsFunction(IPaymentRepository payments, IOrderRepository orders, ITableRepository tables, JwtHelper jwt, ILogger<PaymentsFunction> logger)
     {
         _payments = payments;
         _orders = orders;
+        _tables = tables;
         _jwt = jwt;
         _logger = logger;
     }
@@ -63,11 +65,39 @@ public sealed class PaymentsFunction
             OrderId = body.OrderId,
             Mode = body.Mode,
             Amount = body.Amount,
+            Tip = body.Tip,
             Status = PaymentStatus.Success,
             RazorpayOrderId = body.RazorpayOrderId,
             RazorpayPaymentId = body.RazorpayPaymentId
         };
         await _payments.AddAsync(payment, ct);
+
+        // Auto-serve + free table when fully paid
+        var allPayments = await _payments.GetByOrderAsync(body.OrderId, tenantId, ct);
+        var totalPaid = allPayments.Where(p => p.Status == PaymentStatus.Success).Sum(p => p.Amount);
+        if (totalPaid >= order.TotalAmount)
+        {
+            if (order.Status is not OrderStatus.Served and not OrderStatus.Cancelled)
+            {
+                order.Status = OrderStatus.Served;
+                order.UpdatedAt = DateTime.UtcNow;
+                await _orders.UpdateAsync(order, ct);
+            }
+
+            var table = await _tables.GetByIdAsync(order.TableId, tenantId, ct);
+            if (table is not null && table.Status != TableStatus.Free)
+            {
+                var otherActive = (await _orders.GetByTableAsync(order.TableId, tenantId, ct))
+                    .Any(o => o.Id != order.Id && o.Status is not OrderStatus.Served and not OrderStatus.Cancelled);
+                if (!otherActive)
+                {
+                    table.Status = TableStatus.Free;
+                    table.UpdatedAt = DateTime.UtcNow;
+                    await _tables.UpdateAsync(table, ct);
+                }
+            }
+        }
+
         return await ResponseFactory.CreatedAsync(req, MapToResponse(payment));
     }
 
@@ -77,6 +107,7 @@ public sealed class PaymentsFunction
         OrderId = p.OrderId,
         Mode = p.Mode,
         Amount = p.Amount,
+        Tip = p.Tip,
         Status = p.Status,
         RazorpayOrderId = p.RazorpayOrderId,
         RazorpayPaymentId = p.RazorpayPaymentId,
