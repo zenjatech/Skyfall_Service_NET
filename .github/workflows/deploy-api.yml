@@ -2,16 +2,16 @@ name: Deploy Skyfall Service to Azure Functions
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '10.0.x'
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  DOTNET_VERSION: '10.x'
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +27,11 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish
-        run: dotnet publish --configuration Release --no-build --output ./publish
+        run: dotnet publish --configuration Release --no-build --output ./output
 
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
-          package: ./publish
+          app-name: ${{ secrets.AZURE_FUNCTION_APP_NAME }}
+          package: output
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
